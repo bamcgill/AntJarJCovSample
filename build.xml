@@ -1,0 +1,149 @@
+<project name="AntJarJCovExample">
+	<property name="built" value="built" />
+	<property name="jar.name" value="sample.jar" />
+	<property name="testjar.name" value="tests.jar" />
+	<property name="main.build.dir" value="built/main/classes" />
+	<property name="main.build.instrumented.dir" value="built/main/instrumented/classes" />
+	<property name="main.src.dir" value="src" />
+	<property name="test.build.dir" value="built/test/classes" />
+	<property name="test.src.dir" value="test" />
+	<property name="jcov.jar" value="lib/jcov.jar" />
+	<property name="jcov_network.jar" value="lib/jcov_network_saver.jar" />
+	<property name="jcoverage.template" value="jcoverage_template.xml" />
+	<property name="jcoverage.result" value="jcoverage_result.xml" />
+	<property name="coverage-report" value="coverage-report" />
+
+	<path id="classpath.classes">
+		<path refid="classpath.junit" />
+		<pathelement location="${built}/${jar.name}" />
+		<pathelement location="${built}/${testjar.name}" />
+	</path>
+
+	<path id="classpath.junit">
+		<pathelement location="lib/junit-4.12.jar" />
+		<pathelement location="lib/hamcrest-core-1.3.jar" />
+		<pathelement location="lib/jcov_network_saver.jar" />
+	</path>
+
+	<path id="classpath.test">
+		<pathelement location="${main.build.dir}" />
+		<path refid="classpath.junit" />
+		<pathelement location="lib/jcov.jar" />
+		<pathelement location="lib/jcov_file_saver.jar" />
+		<pathelement location="lib/jcov_jcard_saver.jar" />
+		<pathelement location="lib/jcov_me_network_saver.jar" />
+		<pathelement location="lib/jcov_network_saver.jar" />
+		<pathelement location="lib/jtobserver.jar" />
+	</path>
+
+	<target name="0.clean-up" description="Clean it up. All of it.">
+		<delete dir="${built}" />
+		<delete file="template.xml" />
+	</target>
+
+	<target name="compile">
+		<mkdir dir="${main.build.dir}" />
+		<javac srcdir="${main.src.dir}" destdir="${main.build.dir}" includeantruntime="false" />
+		<exec command="find ${basedir}/${main.build.dir} -name *.class -ls" />
+	</target>
+
+	<target name="jar" depends="compile">
+		<jar destfile="${built}/${jar.name}">
+			<fileset dir="${main.build.dir}">
+				<include name="**/*.class" />
+			</fileset>
+		</jar>
+		<exec command="jar -tvf ${built}/${jar.name}" />
+		<jar destfile="${built}/${testjar.name}">
+			<fileset dir="${test.build.dir}">
+				<include name="**/*.class" />
+			</fileset>
+		</jar>
+
+		<exec command="jar -tvf ${built}/${testjar.name}" />
+	</target>
+
+	<target name="test-compile" depends="compile">
+		<mkdir dir="${test.build.dir}" />
+		<javac srcdir="${test.src.dir}" destdir="${test.build.dir}" includeantruntime="false">
+			<classpath refid="classpath.test" />
+		</javac>
+	</target>
+
+	<target name="3.run-tests" description="Run the tests.">
+		<junit printsummary="on" haltonfailure="yes" fork="true">
+			<classpath>
+				<pathelement location="${built}/${testjar.name}/" />
+				<pathelement location="${built}/${jar.name}" />
+				<path refid="classpath.junit" />
+				<path refid="classpath.test" />
+			</classpath>
+			<formatter type="brief" usefile="false" />
+			<batchtest>
+				<fileset dir="${test.build.dir}" includes="**/*Test*.class" />
+			</batchtest>
+		</junit>
+	</target>
+
+	<target name="instrument-classes">
+		<echo message="Instrumenting classes" />
+		<java jar="${jcov.jar}" fork="true" failonerror="true" classpath="classpath.test">
+			<arg line="instr -output  ${main.build.instrumented.dir} ${test.build.dir}" />
+		</java>
+		<echo message="compiled classes" />
+		<exec executable="find">
+			<arg value="${basedir}/${main.build.dir}" />
+			<arg value="-name" />
+			<arg value="*.class" />
+			<arg value="-ls" />
+		</exec>
+		<echo message="instrumented classes" />
+		<exec executable="find">
+			<arg value="${basedir}/${main.build.instrumented.dir}" />
+			<arg value="-name" />
+			<arg value="*.class" />
+			<arg value="-ls" />
+		</exec>
+
+	</target>
+	
+	<target name="1.build-instrument-jar" description="Add jcoverage instrumentation" depends="compile, test-compile, jar">
+		<echo message="Instrumenting jar ${built}/${jar.name}" />
+		<java jar="${jcov.jar}" fork="true" failonerror="true" classpath="classpath.test">
+			<arg line="instr -t ${built}/${jcoverage.template} ${built}/${jar.name}" />
+		</java>
+		<echo message=" " />
+		<echo message="jar ${built}/${jar.name} Contents" />
+		<exec executable="jar">
+			<arg value="-tvf" />
+			<arg value="${built}/${jar.name}" />
+		</exec>
+		<echo message=" " />
+		<echo message="jcoverage template ${jcoverage.template}" />
+		<exec executable="find">
+			<arg value="${basedir}/${built}" />
+			<arg value="-name" />
+			<arg value="${jcoverage.template}" />
+			<arg value="-ls" />
+		</exec>
+	</target>
+
+	<target name="2.coverage-start" description="Start grabber for test data collection">
+		<java jar="${jcov.jar}" fork="true" classpath="">
+			<arg line=" grabber -t ${built}/${jcoverage.template} -o ${built}/${jcoverage.result}" />
+		</java>
+	</target>
+
+	<target name="4.coverage-stop" description="Stop Grabber. Kill it.">
+		<java jar="${jcov.jar}" fork="true">
+			<arg line=" grabberManager -kill" />
+		</java>
+	</target>
+
+	<target name="5.coverage-report" description="Generage coverage report">
+		<java jar="${jcov.jar}" fork="true">
+			<arg line="  repgen -o ${built}/${coverage-report} ${built}/${jcoverage.result}" />
+		</java>
+	</target>
+
+</project>
